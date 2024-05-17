@@ -1,32 +1,114 @@
 #include <bits/stdc++.h>
 using namespace std;
 
+////////////////////////
+// simulated binary16 //
+////////////////////////
+
+class Float16{
+    
+    public:    
+        Float16(double in) : value(in)
+        {
+            truncate();
+        }
+
+        Float16() : value(0) {}
+
+        Float16& operator=(double rhs)
+        {
+            value = rhs;
+            truncate();
+            return *this;
+        }
+
+        friend Float16 operator+(Float16 lhs, Float16 rhs)
+        {
+            double tmp = lhs.value + rhs.value;
+            return Float16(tmp);
+        }
+
+        operator float() const
+        {
+            return static_cast<float>(value);
+        }
+
+        operator double() const
+        {
+            return value;
+        }
+
+    private:
+
+        static const uint32_t mantissa_shift = 42;
+        static const uint32_t exp_shift_mid   = 56;
+        static const uint32_t exp_shift_out   = 52;
+        static const uint64_t exp_exp_mid = (63llu << exp_shift_mid);
+        static const uint64_t mask_exp_out = (15llu << exp_shift_out);
+        static const uint64_t mask_exp_lead = (1llu << 62);
+        static const uint64_t mask_mantissa_d = (1llu << 63) + mask_exp_lead + exp_exp_mid + mask_exp_out;
+
+        void truncate()
+        {
+            uint64_t utmp;
+            memcpy(&utmp, &value, sizeof utmp);
+            //zeroing mantissa bits starting from 11th (this is NOT rounding)
+            utmp = utmp >> mantissa_shift;
+            utmp = utmp << mantissa_shift;
+            //setting masks for 5-bit exponent extraction out of 11-bit one
+            
+            if (utmp & mask_exp_lead) {// checking leading bit, suspect overflow
+                if (utmp & exp_exp_mid) { //Detected overflow if at least 1 bit is non-zero
+                    //Assign Inf with proper sign
+                    utmp = utmp | exp_exp_mid; //setting 1s in the middle 6 bits of of exponent
+                    utmp = utmp & mask_mantissa_d; //zeroing mantissa irrelative of original values to prevent NaN
+                    utmp = utmp | mask_exp_out; //setting 1s in the last 4 bits of exponent
+                }
+            } else { //checking small numbers according to exponent range
+                if ((utmp & exp_exp_mid) != exp_exp_mid) { //Detected underflow if at least 1 bit is 0
+                    utmp = 0;
+                }
+            }
+            memcpy(&value, &utmp, sizeof utmp);
+        }
+        
+        double value;
+
+};
+
+
+////////////////
+// expression //
+////////////////
+
 
 typedef pair<int,double> IndexFloat;
 
-
 class Expression
 {
+    private:
+        struct Sum;
+    
     public:
 
         typedef shared_ptr<Expression> Ptr;
-        typedef tuple<Ptr,Ptr,char> Sum;
 
         static Ptr create(int i, double float_value)
         {
             return make_shared<Expression>(IndexFloat(i, float_value));
         }
 
-        static Ptr sum(Ptr l, Ptr r, char type = 'd')
+        template<class... Summands>
+        static Ptr sum(char type, Summands&&... summands)
         {
-            return make_shared<Expression>(move(l), move(r), type);
+            return make_shared<Expression>(type, vector<Ptr>{forward<Summands>(summands)...});
         }
 
         Expression(const IndexFloat& value) : value(value), ans_is_cached(true), cached_ans(value.second)
         {
         }
 
-        Expression(Ptr l, Ptr r, char type = 'd') : value(Sum{l,r,type}), ans_is_cached(false)
+        Expression(char type, vector<Ptr> summands) : value(Sum{move(summands), type}), ans_is_cached(false)
         {
         }
 
@@ -50,19 +132,29 @@ class Expression
             return get<IndexFloat>(value);
         }
 
-        const Sum& get_sum() const
+        void add_summand(Ptr summand, char default_type = 'd')
         {
-            return get<Sum>(value);
+            if (is_atomic())
+            {
+                auto[index,float_value] = get_atomic_value();
+                value = Sum{{Expression::create(index,float_value)}, default_type};
+            }
+            get<Sum>(value).summands.push_back(summand);
         }
 
-        char sum_type() const
+        const vector<Ptr>& get_summands() const
         {
-            return get<2>(get<Sum>(value));
+            return get<Sum>(value).summands;
+        }
+
+        char get_sum_type() const
+        {
+            return get<Sum>(value).type;
         }
 
         void set_sum_type(char type)
         {
-            get<2>(get<Sum>(value)) = type;
+            get<Sum>(value).type = type;
             ans_is_cached = false;
         }
 
@@ -82,11 +174,16 @@ class Expression
             }
             else
             {
-                const auto&[l,r,type] = get_sum();
-                out << '{' << type << ':';
-                l->print(out, use_indices, false);
-                out << ',';
-                r->print(out, use_indices, false);
+                const auto& sum = get<Sum>(value);
+                out << '{' << sum.type << ':';
+                for (size_t i = 0; i < sum.summands.size(); ++i)
+                {
+                    if (i > 0)
+                    {
+                        out << ',';
+                    }
+                    sum.summands[i]->print(out, use_indices, false);
+                }
                 out << '}';
             }
             if (print_nl)
@@ -96,6 +193,12 @@ class Expression
         }
 
     private:
+
+        struct Sum
+        {
+            vector<Ptr> summands;
+            char type;
+        };
 
         bool dirty() const
         {
@@ -107,21 +210,45 @@ class Expression
             {
                 return false;
             }
-            const auto&[l,r,type] = get_sum();
-            return l->dirty() || r->dirty();
+            const auto& sum = get<Sum>(value);
+            return any_of(sum.summands.begin(), sum.summands.end(), [](const Ptr& e) { return e->dirty(); });
         }
 
         double do_eval() const
         {
-            // assume non-atomic, for the time being type is ignored.
-            const auto&[l,r,type] = get_sum();
-            return l->eval() + r->eval();
+            // assume non-atomic.
+            switch (get<Sum>(value).type)
+            {
+                case 'd':
+                    return do_eval_helper<double>();
+                case 's':
+                    return do_eval_helper<float>();
+                case 'h':
+                    return do_eval_helper<Float16>();
+                default:
+                    assert(false);
+            }
+        }
+
+        template<class Type>
+        double do_eval_helper() const
+        {
+            Type acc(0.0);
+            for (const auto& summand : get<Sum>(value).summands)
+            {
+                acc = acc + Type(summand->eval());
+            }
+            return double(acc);
         }
 
         variant<IndexFloat, Sum> value;
         mutable bool ans_is_cached;
         mutable double cached_ans;
 };
+
+///////////////////////////
+// Expression comparison //
+///////////////////////////
 
 struct GtAbs
 {
@@ -132,6 +259,10 @@ struct GtAbs
         return abs_1 > abs_2;
     }
 };
+
+//////////
+// Main //
+//////////
 
 int main()
 {
@@ -147,10 +278,7 @@ int main()
 
     if (N == 1)
     {
-        cout << "{d:";
-        X[0]->print(cout, true, false);
-        cout << '}' << endl;
-        return 0;
+        X[0] = Expression::sum('s', X[0]);
     }
     
     priority_queue<Expression::Ptr,vector<Expression::Ptr>,GtAbs> q(X.begin(), X.end());
@@ -162,10 +290,11 @@ int main()
         q.pop();
         auto e2 = move(q.top());
         q.pop();
-        q.push(Expression::sum(move(e1), move(e2)));
+        q.push(Expression::sum('s', move(e1), move(e2)));
     }
 
     auto top = move(q.top());
     top->print(cout, true, false);
     cout << endl;
+    cout << top->eval() << endl;
 }
