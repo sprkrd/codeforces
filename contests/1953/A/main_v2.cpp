@@ -3,6 +3,8 @@ using namespace std;
 
 constexpr size_t block_size = 16;
 
+typedef pair<int,double> IndexFloat;
+
 ////////////////////////
 // simulated binary16 //
 ////////////////////////
@@ -84,7 +86,7 @@ class Float16{
 ////////////////
 
 
-typedef pair<int,double> IndexFloat;
+
 
 class Expression
 {
@@ -290,6 +292,35 @@ class Expression
         mutable double cached_ans;
 };
 
+////////////
+// Scorer //
+////////////
+
+
+//class Scorer
+//{
+    //public:
+
+        //Scorer(vector<double> input) : true_sum(0);
+        //{
+            //sort(input.begin(), input.end(), [](double x, double y)
+            //{
+                //return fabs(x) < fabs(y);
+            //});
+            //double c = 0;
+            //for (double x : input)
+            //{
+                
+            //}
+        //}
+
+    //private:
+
+        //double true_sum;
+
+//}
+
+
 ///////////////////////////
 // Expression comparison //
 ///////////////////////////
@@ -303,37 +334,6 @@ struct GtAbs
         return abs_1 > abs_2;
     }
 };
-
-////////////
-// Scorer //
-////////////
-
-// class Scorer
-// {
-//     public:
-//
-//         Scorer(vector<IndexFloat> input) : reference_sum(0)
-//         {
-//             long double trueSum=0, corr=0;
-//             vector<double> dvtmp=vec;
-//             sort(dvtmp.begin(),dvtmp.end(), [](const double x, const double y) {
-//                 return fabs(x) < fabs(y);
-//             });
-//             for (auto i : dvtmp) {
-//                 volatile long double y = static_cast<long double>(i) - corr;
-//                 volatile long double t = trueSum + y;
-//                 corr = (t - trueSum) - y;
-//                 trueSum = t;
-//             }
-//             return (double)trueSum;
-//         }
-//
-//     private:
-//
-//         double reference_sum;
-// };
-
-
 
 //////////
 // Main //
