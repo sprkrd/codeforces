@@ -1,6 +1,8 @@
 #include <bits/stdc++.h>
 using namespace std;
 
+constexpr size_t block_size = 16;
+
 ////////////////////////
 // simulated binary16 //
 ////////////////////////
@@ -192,6 +194,48 @@ class Expression
             }
         }
 
+        vector<IndexFloat> in_order() const
+        {
+
+            vector<IndexFloat> result;
+            stack<const Expression*> stk;
+            stk.push(this);
+            while (!stk.empty())
+            {
+                auto* e = stk.top();
+                stk.pop();
+                if (e->is_atomic())
+                {
+                    result.push_back(e->get_atomic_value());
+                }
+                else
+                {
+                    const auto& summands = e->get_summands();
+                    for (int i = summands.size()-1; i >= 0; --i)
+                    {
+                        stk.push(summands[i].get());
+                    }
+                }
+            }
+            return result;
+        }
+
+        double random_penalty() const
+        {
+            size_t violations = 0;
+            auto elements = in_order();
+            for (size_t i = 0; i < elements.size(); i+=block_size)
+            {
+                int pos_i = elements[i].first;
+                for (size_t j = i+1; j < min(elements.size(), i + block_size); ++j)
+                {
+                    int pos_j = elements[j].first;
+                    violations += abs(pos_i - pos_j) >= block_size;
+                }
+            }
+            return violations*(violations+1) / 40.000;
+        }
+
     private:
 
         struct Sum
@@ -260,6 +304,37 @@ struct GtAbs
     }
 };
 
+////////////
+// Scorer //
+////////////
+
+// class Scorer
+// {
+//     public:
+//
+//         Scorer(vector<IndexFloat> input) : reference_sum(0)
+//         {
+//             long double trueSum=0, corr=0;
+//             vector<double> dvtmp=vec;
+//             sort(dvtmp.begin(),dvtmp.end(), [](const double x, const double y) {
+//                 return fabs(x) < fabs(y);
+//             });
+//             for (auto i : dvtmp) {
+//                 volatile long double y = static_cast<long double>(i) - corr;
+//                 volatile long double t = trueSum + y;
+//                 corr = (t - trueSum) - y;
+//                 trueSum = t;
+//             }
+//             return (double)trueSum;
+//         }
+//
+//     private:
+//
+//         double reference_sum;
+// };
+
+
+
 //////////
 // Main //
 //////////
@@ -297,4 +372,10 @@ int main()
     top->print(cout, true, false);
     cout << endl;
     cout << top->eval() << endl;
+
+    auto inorder = top->in_order();
+    for (const auto&[i,f] : top->in_order())
+    {
+        cout << i << endl;
+    }
 }
