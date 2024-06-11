@@ -56,6 +56,8 @@ def create_program_skeleton(*args):
     lines.append("")
     lines.append("int main()")
     lines.append("{")
+    lines.append(nest("ios_base::sync_with_stdio(0);", 1))
+    lines.append(nest("cin.tie(0);", 1))
     lines.append(nest("int t;", 1))
     lines.append(nest("cin >> t;", 1))
     lines.append(nest("while (t--)", 1))
